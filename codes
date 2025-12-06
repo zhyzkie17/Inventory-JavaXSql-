@@ -1,0 +1,338 @@
+import java.sql.*;
+import java.util.Scanner;
+
+public class inventory{
+
+    private static final String URL  = "jdbc:mysql://localhost:3306/mysql?useSSL=false&serverTimezone=UTC";
+    private static final String USER = "root";
+    private static final String PASS = "";
+
+    private static Connection getConnection() throws SQLException {
+        return DriverManager.getConnection(URL, USER, PASS);
+    }
+
+    // ADD PRODUCT
+    private static void Product_Name(Scanner sc) {
+        System.out.print("Enter Product Name: ");
+        String pname = sc.nextLine().trim();
+
+        // Name validation
+        if (pname.isEmpty()) {
+            System.out.println("✘ Product name is required and must be valid.");
+            return;
+        }
+
+        // Check if the product exist
+        if (productExistsByName(pname)) {
+            System.out.println("✘ Product already exists.");
+            return;
+        }
+
+        // qty validation
+        int Quantity;
+        while (true) {
+            System.out.print("Enter Qty: ");
+            Quantity = readInt(sc);
+            if (Quantity >= 0) break;
+            System.out.println("✘ Qty cannot be negative or 0.");
+        }
+
+        // Price validationS
+        double Price;
+        while (true) {
+            System.out.print("Enter Price: ");
+            Price = readDouble(sc);
+            if (Price > 0) break;
+            System.out.println("✘ Price must be greater than 0.");
+        }
+
+        String sql = "INSERT INTO inventory (Product_Name, Quantity, Price) VALUES (?, ?, ?)";
+
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, pname);
+            ps.setInt(2, Quantity);
+            ps.setDouble(3, Price);
+
+            int rows = ps.executeUpdate();
+            if (rows > 0) {
+                System.out.println("✔ Product added.");
+            } 
+            
+            else {
+                System.out.println("✘ Error adding product to the database.");
+            }
+
+        } 
+            catch (SQLException e) {
+            System.out.println("✘ Error inserting product to the database.");
+        }
+    }
+
+    // Check the product name kung nag e-exist na
+    private static boolean productExistsByName(String name) {
+        String sql = "SELECT product_id FROM inventory WHERE Product_name = ?";
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+            ps.setString(1, name);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        } 
+        catch (SQLException e) {
+            return false;
+        }
+    }
+
+    // View all products
+    private static void ViewAllProducts() {
+        String sql = "SELECT * FROM inventory ORDER BY Product_id";
+
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            System.out.println("\nID | NAME | QTY | PRICE");
+            System.out.println("--------------------------------");
+
+            while (rs.next()) {
+                System.out.printf("%d  | %s  | %d  | %.2f%n",
+                        rs.getInt("product_id"),
+                        rs.getString("Product_Name"),
+                        rs.getInt("Quantity"),
+                        rs.getDouble("Price"));
+            }
+            System.out.println();
+
+        } 
+        catch (SQLException e) {
+            System.out.println("✘ Error fetching products.");
+        }
+    }
+
+    // View ng single product lang
+    private static void ViewProduct(Scanner sc) {
+        System.out.print("Enter Product Name to view: ");
+        String pname = sc.nextLine().trim();
+
+        String sql = "SELECT * FROM inventory WHERE Product_Name = ?";
+
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, pname);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) {
+                    System.out.println("✘ Product not found.");
+                    return;
+                }
+
+                System.out.println("\nProduct ID: " + rs.getInt("product_id"));
+                System.out.println("Name: " + rs.getString("Product_Name"));
+                System.out.println("Quantity: " + rs.getInt("Quantity"));
+                System.out.println("Price: " + rs.getDouble("Price"));
+                System.out.println();
+            }
+
+        } 
+        catch (SQLException e) {
+            System.out.println("✘ Error viewing product.");
+        }
+    }
+
+    // Update product 
+    private static void UpdateProduct(Scanner sc) {
+        System.out.print("Enter Product ID to update: ");
+        int pid = readInt(sc);
+
+        String find = "SELECT * FROM inventory WHERE product_id = ?";
+
+        try (Connection con = getConnection();
+             PreparedStatement fp = con.prepareStatement(find)) {
+
+            fp.setInt(1, pid);
+
+            try (ResultSet rs = fp.executeQuery()) {
+                if (!rs.next()) {
+                    System.out.println("✘ Product not found.");
+                    return;
+                }
+
+                System.out.println("Current → Name: " + rs.getString("Product_Name")
+                        + ", Quantity: " + rs.getInt("Quantity")
+                        + ", Price: " + rs.getDouble("Price"));
+            }
+
+        } 
+        catch (SQLException e) {
+            System.out.println("✘ Error loading product.");
+            return;
+        }
+
+        System.out.print("New Product_Name (leave blank to keep): ");
+        String pname = sc.nextLine();
+
+        System.out.print("New Quantity (leave blank to keep): ");
+        String qtyStr = sc.nextLine();
+
+        System.out.print("New Price (leave blank to keep): ");
+        String priceStr = sc.nextLine();
+
+        StringBuilder sql = new StringBuilder("UPDATE inventory SET ");
+        boolean setName = !pname.trim().isEmpty();
+        boolean setQty = !qtyStr.trim().isEmpty();
+        boolean setPrice = !priceStr.trim().isEmpty();
+
+        if (!setName && !setQty && !setPrice) {
+            System.out.println("✘ Nothing to update.");
+            return;
+        }
+
+        if (setName) sql.append("Product_Name = ?");
+        if (setQty) sql.append(setName ? ", Quantity = ?" : "Quantity = ?");
+        if (setPrice) sql.append((setName || setQty) ? ", Price = ?" : "Price = ?");
+        sql.append(" WHERE product_id = ?");
+
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql.toString())) {
+
+            int idx = 1;
+
+            if (setName) ps.setString(idx++, pname.trim());
+
+            if (setQty) {
+                int newQty = Integer.parseInt(qtyStr.trim());
+                if (newQty < 0) {
+                    System.out.println("✘ Qty cannot be negative.");
+                    return;
+                }
+                ps.setInt(idx++, newQty);
+            }
+
+            if (setPrice) {
+                double newPrice = Double.parseDouble(priceStr.trim());
+                if (newPrice <= 0) {
+                    System.out.println("✘ Price must be greater than 0.");
+                    return;
+                }
+                ps.setDouble(idx++, newPrice);
+            }
+
+            ps.setInt(idx, pid);
+
+            int rows = ps.executeUpdate();
+            if (rows > 0) {
+                System.out.println("✔ Product updated.");
+            } else {
+                System.out.println("✘ Error updating product.");
+            }
+
+        } 
+        catch (SQLException e) {
+            System.out.println("✘ Error Inserting product.");
+        }
+    }
+
+    // Delete ng product tapos confirmation
+    private static void DeleteProduct(Scanner sc) {
+        System.out.print("Enter Product Name to delete: ");
+        String pname = sc.nextLine().trim();
+
+        if (!productExistsByName(pname)) {
+            System.out.println("✘ Product not found.");
+            return;
+        }
+
+        System.out.print("Are you sure you want to delete \"" + pname + "\" permanently? (y/n): ");
+        String confirm = sc.nextLine().trim().toLowerCase();
+
+        if (!confirm.equals("y")) {
+            System.out.println("✘ Deletion cancelled.");
+            return;
+        }
+
+        String sql = "DELETE FROM inventory WHERE Product_name = ?";
+
+        try (Connection con = getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, pname);
+
+            int rows = ps.executeUpdate();
+            if (rows > 0) {
+                System.out.println("✔ Product deleted.");
+            } else {
+                System.out.println("✘ Error deleting product.");
+            }
+
+        } 
+        catch (SQLException e) {
+            System.out.println("✘ Error deleting product.");
+        }
+    }
+
+    // Input validation
+    private static int readInt(Scanner sc) {
+        while (true) {
+            try {
+                return Integer.parseInt(sc.nextLine().trim());
+            } 
+            catch (NumberFormatException e) {
+                System.out.print("Enter a valid number: ");
+            }
+        }
+    }
+
+    private static double readDouble(Scanner sc) {
+        while (true) {
+            try {
+                return Double.parseDouble(sc.nextLine().trim());
+            } 
+            catch (NumberFormatException e) {
+                System.out.print("Enter a valid price: ");
+            }
+        }
+    }
+
+    private static void ensureDriverLoaded() {
+        try {
+            Class.forName("com.mysql.cj.jdbc.Driver");
+        } 
+        catch (Exception e) {
+            System.out.println("✘ MySQL Driver missing.");
+            System.exit(1);
+        }
+    }
+
+    private static void menu() {
+        System.out.println("\n==== INVENTORY MENU ====");
+        System.out.println("[1] Add Product");
+        System.out.println("[2] Update Product");
+        System.out.println("[3] Delete Product");
+        System.out.println("[4] View Product");
+        System.out.println("[5] View All Products");
+        System.out.println("[0] Exit");
+        System.out.print("Choose: ");
+    }
+
+    public static void main(String[] args) {
+        ensureDriverLoaded();
+        try (Scanner sc = new Scanner(System.in)) {
+            while (true) {
+                menu();
+                String choice = sc.nextLine().trim();
+                switch (choice) {
+                    case "1": Product_Name(sc); break;
+                    case "2": UpdateProduct(sc); break;
+                    case "3": DeleteProduct(sc); break;
+                    case "4": ViewProduct(sc); break;
+                    case "5": ViewAllProducts(); break;
+                    case "0": System.out.println("Exiting..."); return;
+                    default: System.out.println("Invalid choice.");
+                }
+            }
+        }
+    }
+}
